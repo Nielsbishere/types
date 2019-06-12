@@ -112,21 +112,35 @@ namespace otc {
 	template<typename Target, typename Current>
 	static constexpr bool canCastSafely = CanCastSafely<Target, Current>::value;
 
-	template<typename T, typename ...args>
-	struct TTypeList {
-		static constexpr usz size = 1 + sizeof...(args);
-	};
+	template<typename ...args>
+	static auto getMemberNames(const c8 *s, const args &...) {
 
-	struct TypeList {
+		std::array<std::string, sizeof...(args)> strings {};
 
-		template<typename ...args>
-		static auto make(const args &...) {
-			return TTypeList<args...>();
+		const usz size = strlen(s);
+		bool hasStarted = false;
+
+		for (usz i = 0, elements = 0, prev = 0; i < size; ++i) {
+
+			const c8 &c = s[i];
+
+			if (c == ',' && hasStarted) {
+				strings[elements] = std::string(s + prev, s + i);
+				hasStarted = false;
+				++elements;
+			} else if (c != ' ' && c != '\t' && !hasStarted) {
+
+				prev = i;
+				hasStarted = true;
+			}
+
+			if (i == size - 1)
+				strings[elements] = std::string(s + prev, s + i + 1);
+
 		}
 
-	};
 
-	static constexpr bool Is64Bit = sizeof(usz) == 8;
-
+		return strings;
+	}
 
 }

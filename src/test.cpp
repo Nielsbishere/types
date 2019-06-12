@@ -6,37 +6,6 @@
 #include <iostream>
 #include <array>
 
-template<usz total>
-static auto splitString(char *s) {
-
-	std::array<std::string, total> strings{};
-	
-	const usz size = strlen(s);
-	bool hasStarted = false;
-
-	for (usz i = 0, elements = 0, prev = 0; i < size; ++i) {
-
-		char &c = s[i];
-
-		if (c == ',' && hasStarted) {
-			strings[elements] = std::string(s + prev, s + i);
-			hasStarted = false;
-			++elements;
-		} else if (c != ' ' && c != '\t' && !hasStarted) {
-
-			prev = i;
-			hasStarted = true;
-		}
-
-		if (i == size - 1)
-			strings[elements] = std::string(s + prev, s + i + 1);
-
-	}
-
-
-	return strings;
-}
-
 HAS_FUNC_NAMED(hasBegin, begin);
 HAS_FUNC_NAMED(hasEnd, end);
 HAS_FUNC_NAMED(hasSize, size);
@@ -163,6 +132,21 @@ struct Serializer {
 
 };
 
+#define otc_serialize_tuple(version, ...)											\
+static constexpr u64 struct_version = version;										\
+template<typename T>																\
+inline void serializeTuple(T &serializer, const c8 *member) {						\
+	Serializer<T>::serialize<false>(serializer, member, __VA_ARGS__);				\
+}
+
+#define otc_serialize(version, ...)													\
+static constexpr u64 struct_version = version;										\
+template<typename T>																\
+inline void serialize(T &serializer, const c8 *member) {							\
+	static const auto members = otc::getMemberNames(#__VA_ARGS__, __VA_ARGS__);		\
+	Serializer<T>::serializeObject(serializer, members, member, __VA_ARGS__);		\
+}
+
 struct PrintSerializer {
 
 	template<bool inObject, typename T>
@@ -225,11 +209,7 @@ struct Vector2 {
 
 	Vector2(f32 x = 4, f32 y = 5): x(x), y(y) {}
 
-	template<typename T>
-	inline void serializeTuple(T &serializer, const c8 *member) {
-		Serializer<T>::serialize<false>(serializer, member, x, y);
-	}
-
+	otc_serialize_tuple(0, x, y);
 };
 
 struct Test {
@@ -237,12 +217,7 @@ struct Test {
 	f32 x = f32(otc::Math::PI), y = 2.5f, z = 3, w = 1;
 	std::vector<f32> h { 1, 2, 3 };
 
-	template<typename T>
-	inline void serialize(T &serializer, const c8 *member) {
-		static const auto members = splitString<5>("x, y, z, w, h");
-		Serializer<T>::serializeObject(serializer, members, member, x, y, z, w, h);
-	}
-
+	otc_serialize(0, x, y, z, w, h);
 };
 
 struct Test2 {
@@ -251,12 +226,7 @@ struct Test2 {
 	std::vector<Test> z { {}, {} };
 	Vector2 test;
 
-	template<typename T>
-	inline void serialize(T &serializer, const c8 *member) {
-		static const auto members = splitString<4>("x, y, z, test");
-		Serializer<T>::serializeObject(serializer, members, member, x, y, z, test);
-	}
-
+	otc_serialize(0, x, y, z, test);
 };
 
 void testSerialsize() {
