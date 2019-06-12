@@ -13,19 +13,23 @@
 
 //Thanks to /LagMeester4000 for help
 
-#define HAS_FUNC_NAMED_RET(funcName, name, ret, ...)																\
-	template<typename, typename, typename = int, typename ...>														\
-	struct T##funcName : std::false_type { };																		\
-																													\
-	template<typename T, typename Ret, typename ...args>															\
-	struct T##funcName<																								\
-		T, Ret,																										\
-		std::enable_if_t<std::is_same_v<Ret, decltype(std::declval<T>().name(std::declval<args>()...))>, int>,		\
-		args...																										\
-	> : std::true_type { };																							\
-																													\
-	template<typename T>																							\
-	static constexpr bool funcName = T##funcName<T, ret, int, __VA_ARGS__>::value;
+#define HAS_FUNC_NAMED_RET(funcName, name, ret, ...)																	\
+namespace templates {																									\
+																														\
+	template<typename, typename, typename = int, typename ...>															\
+	struct T##funcName : std::false_type { };																			\
+																														\
+	template<typename T, typename Ret, typename ...args>																\
+	struct T##funcName<																									\
+		T, Ret,																											\
+		std::enable_if_t<std::is_same_v<Ret, decltype(std::declval<T>().name(std::declval<args>()...))>, int>,			\
+		args...																											\
+	> : std::true_type { };																								\
+																														\
+}																														\
+																														\
+template<typename T>																									\
+static constexpr bool funcName = templates::##T##funcName<T, ret, int, __VA_ARGS__>::value;
 
 //HAS_FUNC_NAMED detects if a member function signature is present
 
@@ -37,14 +41,18 @@
 //		So please keep in mind that this won't give perfect results when casting is at play
 
 #define HAS_FUNC_NAMED(funcName, name, ...)																				\
+namespace templates {																									\
+																														\
 	template<typename T, typename = int, typename ...args>																\
 	struct T##funcName : std::false_type {};																			\
 																														\
 	template<typename T, typename ...args>																				\
 	struct T##funcName<T, decltype(std::declval<T>().name(std::declval<args>()...), 0), args...> : std::true_type {};	\
 																														\
-	template<typename T>																								\
-	static constexpr bool funcName = T##funcName<T, int, __VA_ARGS__>::value;
+}																														\
+																														\
+template<typename T>																									\
+static constexpr bool funcName = templates::##T##funcName<T, int, __VA_ARGS__>::value;
 
 //HAS_FUNC_NAMED detects if a templated member function signature is present
 
@@ -56,14 +64,18 @@
 //		So please keep in mind that this won't give perfect results when casting is at play
 
 #define HAS_T_FUNC_NAMED(funcName, name)																								\
-template<typename T, typename T2, typename = int, typename ...args>																		\
-struct T##funcName : std::false_type {};																								\
+namespace templates {																													\
+																																		\
+	template<typename T, typename T2, typename = int, typename ...args>																	\
+	struct T##funcName : std::false_type {};																							\
+																																		\
+	template<typename T, typename T2, typename ...args>																					\
+	struct T##funcName<T, T2, decltype(std::declval<T>().template name<T2>(std::declval<args>()...), 0), args...> : std::true_type {};	\
+																																		\
+}																																		\
 																																		\
 template<typename T, typename T2, typename ...args>																						\
-struct T##funcName<T, T2, decltype(std::declval<T>().template name<T2>(std::declval<args>()...), 0), args...> : std::true_type {};		\
-																																		\
-template<typename T, typename T2, typename ...args>																						\
-static constexpr bool funcName = T##funcName<T, T2, int, args...>::value;
+static constexpr bool funcName = templates::##T##funcName<T, T2, int, args...>::value;
 
 //HAS_FIELD_NAMED_T detects if a member variable with type is present (even if it's protected or private)
 
@@ -73,6 +85,8 @@ static constexpr bool funcName = T##funcName<T, T2, int, args...>::value;
 //This means that you can also check for a T* for example (like having a parent)
 
 #define HAS_FIELD_NAMED_T(funcName, name, type)															\
+namespace templates {																					\
+																										\
 	template<typename, typename, typename = int>														\
 	struct T##funcName : std::false_type {};															\
 																										\
@@ -81,8 +95,10 @@ static constexpr bool funcName = T##funcName<T, T2, int, args...>::value;
 		std::enable_if_t<std::is_same_v<Ret, decltype(std::declval<T>().name)>, int>					\
 	> : std::true_type {};																				\
 																										\
-	template<typename T>																				\
-	static constexpr bool funcName = T##funcName<T, type, int>::value;
+}																										\
+																										\
+template<typename T>																					\
+static constexpr bool funcName = templates::##T##funcName<T, type, int>::value;
 
 //HAS_FIELD_NAMED detects if a member variable is present (even if it's protected or private)
 
@@ -92,55 +108,32 @@ static constexpr bool funcName = T##funcName<T, T2, int, args...>::value;
 //This means that you can also check for a T* for example (like having a parent)
 
 #define HAS_FIELD_NAMED(funcName, name)																	\
+namespace templates {																					\
+																										\
 	template<typename, typename = int>																	\
 	struct T##funcName : std::false_type {};															\
 																										\
 	template<typename T>																				\
 	struct T##funcName<T, decltype(std::declval<T>().name, 0)> : std::true_type {};						\
 																										\
-	template<typename T>																				\
-	static constexpr bool funcName = T##funcName<T, int>::value;
+}																										\
+																										\
+template<typename T>																					\
+static constexpr bool funcName = templates::##T##funcName<T, int>::value;
 
-namespace otc {
+namespace otc::util {
 
-	template <typename T, typename C, typename = void>
-	struct CanCastSafely : std::false_type {};
+	namespace templates {
 
-	template <typename T, typename C>
-	struct CanCastSafely<T, C, std::void_t<decltype(static_cast<T>(std::declval<C>()))>> : std::true_type {};
+		template <typename T, typename C, typename = void>
+		struct CanCastSafely : std::false_type {};
+
+		template <typename T, typename C>
+		struct CanCastSafely<T, C, std::void_t<decltype(static_cast<T>(std::declval<C>()))>> : std::true_type {};
+
+	}
 
 	template<typename Target, typename Current>
-	static constexpr bool canCastSafely = CanCastSafely<Target, Current>::value;
-
-	template<typename ...args>
-	static auto getMemberNames(const c8 *s, const args &...) {
-
-		std::array<std::string, sizeof...(args)> strings {};
-
-		const usz size = strlen(s);
-		bool hasStarted = false;
-
-		for (usz i = 0, elements = 0, prev = 0; i < size; ++i) {
-
-			const c8 &c = s[i];
-
-			if (c == ',' && hasStarted) {
-				strings[elements] = std::string(s + prev, s + i);
-				hasStarted = false;
-				++elements;
-			} else if (c != ' ' && c != '\t' && !hasStarted) {
-
-				prev = i;
-				hasStarted = true;
-			}
-
-			if (i == size - 1)
-				strings[elements] = std::string(s + prev, s + i + 1);
-
-		}
-
-
-		return strings;
-	}
+	static constexpr bool canCastSafely = templates::CanCastSafely<Target, Current>::value;
 
 }

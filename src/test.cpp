@@ -1,151 +1,9 @@
 #include "types/string.hpp"
+#include "util/serialize.hpp"
 #include <stdio.h>
-#include <vector>
 #include <unordered_map>
 #include <assert.h>
 #include <iostream>
-#include <array>
-
-HAS_FUNC_NAMED(hasBegin, begin);
-HAS_FUNC_NAMED(hasEnd, end);
-HAS_FUNC_NAMED(hasSize, size);
-HAS_FUNC_NAMED_RET(hasSerializeEnd, serializeEnd, void);
-HAS_FUNC_NAMED_RET(hasSerializeArrayEnd, serializeArrayEnd, void);
-HAS_T_FUNC_NAMED(hasSerialize, serialize);
-HAS_T_FUNC_NAMED(hasSerializeTuple, serializeTuple);
-
-template<typename T>
-static constexpr bool isIterable = hasBegin<T> && hasEnd<T> && hasSize<T>;
-
-template<typename Serialize>
-struct Serializer {
-
-	//TODO: C-Style arrays
-	//TODO: Strings
-
-	template<bool inObject, typename T>
-	static inline void serialize(Serialize &serializer, const c8 *member, T &t) {
-
-		static constexpr bool
-			hasSerialize_ = hasSerialize<T, Serialize, Serialize &, const c8*>,
-			hasSerializeTuple_ = hasSerializeTuple<T, Serialize, Serialize &, const c8*>;
-
-		//Arrays
-		if constexpr (isIterable<T>) {
-
-			//member;
-
-			//TODO: This isn't safe!
-			serializer.serializeArray<inObject>(member, t);
-
-			for (auto it = t.begin(), end = t.end(); it != end; ++it) {
-
-				serialize<false>(serializer, nullptr, *it);
-
-				if constexpr (hasSerializeEnd<Serialize>) {
-
-					auto next = it;
-					++next;
-
-					if (next != end)
-						serializer.serializeEnd();
-				}
-			}
-
-			if constexpr (hasSerializeArrayEnd<Serialize>)
-				serializer.serializeArrayEnd();
-
-		}
-
-		//Variables
-		else if constexpr (std::is_arithmetic_v<T>) {
-			//TODO: This isn't safe!
-			serializer.serialize<inObject>(member, t);
-		}
-
-		//Objects
-		else if constexpr (hasSerialize_ || hasSerializeTuple_) {
-
-			//TODO: This isn't safe!
-			serializer.serializeObject<inObject, hasSerializeTuple_>(member);
-
-			if constexpr (hasSerialize_)
-				t.serialize<Serialize>(serializer, member);
-			else
-				t.serializeTuple<Serialize>(serializer, member);
-
-			//TODO: This isn't safe!
-			serializer.serializeObjectEnd<hasSerializeTuple_>();
-
-		}
-
-		else
-			static_assert(false, "The object can't be serialized; it should be a container, data type or have serialization functions!");
-	}
-
-	template<bool inObject, typename T, typename ...args>
-	static inline void serialize(Serialize &serializer, const c8 *member, T &t, args &...arg) {
-
-		serialize<inObject>(serializer, member, t);
-
-		if constexpr (sizeof...(args) > 0) {
-
-			if constexpr (hasSerializeEnd<Serialize>)
-				serializer.serializeEnd();
-
-			serialize<inObject>(serializer, member, arg...);
-		}
-
-	}
-
-	template<usz offset = 0, usz memberCount, typename T, typename ...args>
-	static inline void serializeObject(Serialize &serializer, const std::array<std::string, memberCount> &members, const c8 *member, T &t, args &...arg){
-
-		member;
-		serialize<true>(serializer, members[offset].data(), t);
-
-		if constexpr (sizeof...(args) > 0) {
-
-			if constexpr (hasSerializeEnd<Serialize>)
-				serializer.serializeEnd();
-
-			serializeObject<offset + 1>(serializer, members, member, arg...);
-		}
-
-	}
-
-	template<typename T, typename ...args>
-	static inline Serialize serialize(T &t, args &...arg) {
-
-		Serialize serializer;
-
-		//TODO: This isn't safe!
-		serializer.serializeObject<false, true>(nullptr);
-
-		serialize<false>(serializer, nullptr, t, arg...);
-
-		//TODO: This isn't safe!
-		serializer.serializeObjectEnd<true>();
-
-		return serializer;
-	}
-
-};
-
-#define otc_serialize_tuple(version, ...)											\
-static constexpr u64 struct_version = version;										\
-template<typename T>																\
-inline void serializeTuple(T &serializer, const c8 *member) {						\
-	Serializer<T>::serialize<false>(serializer, member, __VA_ARGS__);				\
-}
-
-#define otc_serialize(version, ...)													\
-static constexpr u64 struct_version = version;										\
-template<typename T>																\
-inline void serialize(T &serializer, const c8 *member) {							\
-	static const auto members = otc::getMemberNames(#__VA_ARGS__, __VA_ARGS__);		\
-	Serializer<T>::serializeObject(serializer, members, member, __VA_ARGS__);		\
-}
 
 struct PrintSerializer {
 
@@ -157,7 +15,12 @@ struct PrintSerializer {
 		if constexpr (inObject) 
 			printf("\"%s\": ", member);
 
-		std::cout << t;
+		if constexpr(std::is_same_v<T, c8> || std::is_same_v<T, const c8>)
+			std::cout << '\'' << t << '\'';
+		else if constexpr (otc::util::isIterable<T>)
+			std::cout << '\"' << t << '\"';
+		else
+			std::cout << t;
 	}
 
 	inline void serializeEnd() {
@@ -206,8 +69,9 @@ struct PrintSerializer {
 struct Vector2 {
 
 	f32 x, y;
+	//f32 zw[2];
 
-	Vector2(f32 x = 4, f32 y = 5): x(x), y(y) {}
+	Vector2(f32 x = 4, f32 y = 5): x(x), y(y)/*, zw { 7, 9.333 } */ {}
 
 	otc_serialize_tuple(0, x, y);
 };
@@ -216,8 +80,9 @@ struct Test {
 
 	f32 x = f32(otc::Math::PI), y = 2.5f, z = 3, w = 1;
 	std::vector<f32> h { 1, 2, 3 };
+	std::vector<std::string> strings { "dfaisdfj", "dfioasdf" };
 
-	otc_serialize(0, x, y, z, w, h);
+	otc_serialize(0, x, y, z, w, h, strings);
 };
 
 struct Test2 {
@@ -225,15 +90,16 @@ struct Test2 {
 	Test x{}, y{};
 	std::vector<Test> z { {}, {} };
 	Vector2 test;
+	std::string myString = "haha";
 
-	otc_serialize(0, x, y, z, test);
+	otc_serialize(0, x, y, z, test, myString);
 };
 
 void testSerialsize() {
 
 	Test2 tests;
 	f32 value{};
-	Serializer<PrintSerializer>::serialize(tests, value);
+	otc::Serializer<PrintSerializer>::serialize(tests, value);
 
 	using arr = std::vector<f32>;
 	using pair = std::pair<c8 *, f32>;

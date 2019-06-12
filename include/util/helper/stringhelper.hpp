@@ -82,7 +82,7 @@ namespace otc {
 				//{ x, y } = x: y (TODO: JSON edge case; if not in object or pair[])
 				else if constexpr (hasFirst<T> && hasSecond<T>) {
 
-					if constexpr (useKeyPairNotation<type> && (otc::canCastSafely<const c8*, decltype(v.first)>))
+					if constexpr (useKeyPairNotation<type> && (otc::util::canCastSafely<const c8*, decltype(v.first)>))
 						return 2 + serialsize_<type>(v.first) + serialsize_<type>(v.second);
 					else
 						return 6 + serialsize_<type>(v.first) + serialsize_<type>(v.second);
