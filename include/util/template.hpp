@@ -46,6 +46,25 @@
 	template<typename T>																								\
 	static constexpr bool funcName = T##funcName<T, int, __VA_ARGS__>::value;
 
+//HAS_FUNC_NAMED detects if a templated member function signature is present
+
+//Example:
+//HAS_T_FUNC_NAMED(hasSerialize, serialize)
+//Would generate hasSerialize<T, T2, args> that checks if the member function "auto T::serialize<T2>(args...)" is available
+
+//NOTE: Can give false positives if a type can implicitly cast (like mistake ints for floats)
+//		So please keep in mind that this won't give perfect results when casting is at play
+
+#define HAS_T_FUNC_NAMED(funcName, name)																								\
+template<typename T, typename T2, typename = int, typename ...args>																		\
+struct T##funcName : std::false_type {};																								\
+																																		\
+template<typename T, typename T2, typename ...args>																						\
+struct T##funcName<T, T2, decltype(std::declval<T>().template name<T2>(std::declval<args>()...), 0), args...> : std::true_type {};		\
+																																		\
+template<typename T, typename T2, typename ...args>																						\
+static constexpr bool funcName = T##funcName<T, T2, int, args...>::value;
+
 //HAS_FIELD_NAMED_T detects if a member variable with type is present (even if it's protected or private)
 
 //Example:

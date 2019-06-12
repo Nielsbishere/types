@@ -4,98 +4,230 @@
 #include <unordered_map>
 #include <assert.h>
 #include <iostream>
+#include <array>
 
-static auto splitString(const char *s) {
-	return s;
+template<usz total>
+static auto splitString(char *s) {
+
+	std::array<std::string, total> strings{};
+	
+	const usz size = strlen(s);
+	bool hasStarted = false;
+
+	for (usz i = 0, elements = 0, prev = 0; i < size; ++i) {
+
+		char &c = s[i];
+
+		if (c == ',' && hasStarted) {
+			strings[elements] = std::string(s + prev, s + i);
+			hasStarted = false;
+			++elements;
+		} else if (c != ' ' && c != '\t' && !hasStarted) {
+
+			prev = i;
+			hasStarted = true;
+		}
+
+		if (i == size - 1)
+			strings[elements] = std::string(s + prev, s + i + 1);
+
+	}
+
+
+	return strings;
 }
 
 HAS_FUNC_NAMED(hasBegin, begin);
 HAS_FUNC_NAMED(hasEnd, end);
 HAS_FUNC_NAMED(hasSize, size);
 HAS_FUNC_NAMED_RET(hasSerializeEnd, serializeEnd, void);
-HAS_FUNC_NAMED_RET(hasSerializeArray, serializeArray, void, const c8*);
 HAS_FUNC_NAMED_RET(hasSerializeArrayEnd, serializeArrayEnd, void);
-HAS_FUNC_NAMED_RET(hasSerializeObject, serializeObject, void, const c8*);
-HAS_FUNC_NAMED_RET(hasSerializeObjectEnd, serializeObjectEnd, void);
+HAS_T_FUNC_NAMED(hasSerialize, serialize);
+HAS_T_FUNC_NAMED(hasSerializeTuple, serializeTuple);
 
 template<typename T>
 static constexpr bool isIterable = hasBegin<T> && hasEnd<T> && hasSize<T>;
 
-template<template<typename> typename Serialize>
+template<typename Serialize>
 struct Serializer {
 
 	//TODO: C-Style arrays
-	//TODO: Serializer should be non-static, so it can have variables.
-	//TODO: Cleanup! Array/Object funcs only need const u8*
-	//TODO: Member variables
-	//TODO: Allow objects as tuples
+	//TODO: Strings
 
-	template<typename T>
-	static inline void serialize(const c8 *member, T &t) {
+	template<bool inObject, typename T>
+	static inline void serialize(Serialize &serializer, const c8 *member, T &t) {
+
+		static constexpr bool
+			hasSerialize_ = hasSerialize<T, Serialize, Serialize &, const c8*>,
+			hasSerializeTuple_ = hasSerializeTuple<T, Serialize, Serialize &, const c8*>;
 
 		//Arrays
 		if constexpr (isIterable<T>) {
 
-			member;
+			//member;
 
-			if constexpr (hasSerializeArray<Serialize<T>>)
-				Serialize<T>::serializeArray(member);
+			//TODO: This isn't safe!
+			serializer.serializeArray<inObject>(member, t);
 
 			for (auto it = t.begin(), end = t.end(); it != end; ++it) {
 
-				serialize(nullptr, *it);
+				serialize<false>(serializer, nullptr, *it);
 
-				if constexpr (hasSerializeEnd<Serialize<T>>) {
+				if constexpr (hasSerializeEnd<Serialize>) {
 
 					auto next = it;
 					++next;
 
-					if(next != end)
-						Serialize<T>::serializeEnd();
+					if (next != end)
+						serializer.serializeEnd();
 				}
 			}
 
-			if constexpr (hasSerializeArrayEnd<Serialize<T>>)
-				Serialize<T>::serializeArrayEnd();
+			if constexpr (hasSerializeArrayEnd<Serialize>)
+				serializer.serializeArrayEnd();
 
 		}
-		
+
 		//Variables
-		else if constexpr(std::is_arithmetic_v<T>)
-			Serialize<T>::serialize(member, t);
+		else if constexpr (std::is_arithmetic_v<T>) {
+			//TODO: This isn't safe!
+			serializer.serialize<inObject>(member, t);
+		}
 
 		//Objects
-		else {
-			
-			if constexpr (hasSerializeObject<Serialize<T>>)
-				Serialize<T>::serializeObject(member);
+		else if constexpr (hasSerialize_ || hasSerializeTuple_) {
 
-			t.serialize<Serialize>(member);
+			//TODO: This isn't safe!
+			serializer.serializeObject<inObject, hasSerializeTuple_>(member);
 
-			if constexpr (hasSerializeObjectEnd<Serialize<T>>)
-				Serialize<T>::serializeObjectEnd();
+			if constexpr (hasSerialize_)
+				t.serialize<Serialize>(serializer, member);
+			else
+				t.serializeTuple<Serialize>(serializer, member);
+
+			//TODO: This isn't safe!
+			serializer.serializeObjectEnd<hasSerializeTuple_>();
 
 		}
+
+		else
+			static_assert(false, "The object can't be serialized; it should be a container, data type or have serialization functions!");
 	}
 
-	template<typename T, typename ...args>
-	static inline void serialize(const c8 *member, T &t, args &...arg) {
+	template<bool inObject, typename T, typename ...args>
+	static inline void serialize(Serialize &serializer, const c8 *member, T &t, args &...arg) {
 
-		serialize(member, t);
+		serialize<inObject>(serializer, member, t);
 
 		if constexpr (sizeof...(args) > 0) {
 
-			if constexpr (hasSerializeEnd<Serialize<T>>)
-				Serialize<T>::serializeEnd();
+			if constexpr (hasSerializeEnd<Serialize>)
+				serializer.serializeEnd();
 
-			serialize(member, arg...);
+			serialize<inObject>(serializer, member, arg...);
+		}
+
+	}
+
+	template<usz offset = 0, usz memberCount, typename T, typename ...args>
+	static inline void serializeObject(Serialize &serializer, const std::array<std::string, memberCount> &members, const c8 *member, T &t, args &...arg){
+
+		member;
+		serialize<true>(serializer, members[offset].data(), t);
+
+		if constexpr (sizeof...(args) > 0) {
+
+			if constexpr (hasSerializeEnd<Serialize>)
+				serializer.serializeEnd();
+
+			serializeObject<offset + 1>(serializer, members, member, arg...);
 		}
 
 	}
 
 	template<typename T, typename ...args>
-	static inline void serialize(T &t, args &...arg) {
-		serialize(nullptr, t, arg...);
+	static inline Serialize serialize(T &t, args &...arg) {
+
+		Serialize serializer;
+
+		//TODO: This isn't safe!
+		serializer.serializeObject<false, true>(nullptr);
+
+		serialize<false>(serializer, nullptr, t, arg...);
+
+		//TODO: This isn't safe!
+		serializer.serializeObjectEnd<true>();
+
+		return serializer;
+	}
+
+};
+
+struct PrintSerializer {
+
+	template<bool inObject, typename T>
+	inline void serialize(const c8 *member, T &t) {
+
+		member;
+
+		if constexpr (inObject) 
+			printf("\"%s\": ", member);
+
+		std::cout << t;
+	}
+
+	inline void serializeEnd() {
+		printf(", ");
+	}
+
+	template<bool inObject, typename T>
+	inline void serializeArray(const c8 *member, T &) {
+
+		member;
+
+		if constexpr (inObject)
+			printf("\"%s\": ", member);
+
+		printf("[ ");
+	}
+
+	inline void serializeArrayEnd() {
+		printf(" ]");
+	}
+
+	template<bool inObject, bool isTuple>
+	inline void serializeObject(const c8 *member) {
+
+		member;
+
+		if constexpr (inObject)
+			printf("\"%s\": ", member);
+
+		if constexpr (isTuple)
+			printf("[ ");
+		else
+			printf("{ ");
+	}
+
+	template<bool isTuple>
+	inline void serializeObjectEnd() {
+		if constexpr (isTuple)
+			printf(" ]");
+		else
+			printf(" }");
+	}
+
+};
+
+struct Vector2 {
+
+	f32 x, y;
+
+	Vector2(f32 x = 4, f32 y = 5): x(x), y(y) {}
+
+	template<typename T>
+	inline void serializeTuple(T &serializer, const c8 *member) {
+		Serializer<T>::serialize<false>(serializer, member, x, y);
 	}
 
 };
@@ -105,53 +237,33 @@ struct Test {
 	f32 x = f32(otc::Math::PI), y = 2.5f, z = 3, w = 1;
 	std::vector<f32> h { 1, 2, 3 };
 
-	template<template<typename> typename T>
-	inline void serialize(const c8 *) {
-		static const auto split = splitString("x, y, z, w, h");
-		Serializer<T>::serialize/*Object*/(split, x, y, z, w, h);
+	template<typename T>
+	inline void serialize(T &serializer, const c8 *member) {
+		static const auto members = splitString<5>("x, y, z, w, h");
+		Serializer<T>::serializeObject(serializer, members, member, x, y, z, w, h);
 	}
 
 };
 
-template<typename T/*, bool inObject */>
-struct PrintSerializer {
+struct Test2 {
 
-	static inline void serialize(const c8 *, T &t) {
-		std::cout << t;
-	}
+	Test x{}, y{};
+	std::vector<Test> z { {}, {} };
+	Vector2 test;
 
-	static inline void serializeEnd() {
-		printf(", ");
-	}
-
-	static inline void serializeArray(const c8 * /*, T &t */) {
-		//if constexpr(inObject)
-		//	printf("\"%s\": ", name);
-		//else
-		printf("[ ");
-	}
-
-	static inline void serializeArrayEnd() {
-		printf(" ]");
-	}
-
-	static inline void serializeObject(const c8 *) {
-		//if constexpr(inObject)
-		//	printf("\"%s\": ", name);
-		//else
-		printf("{ ");
-	}
-
-	static inline void serializeObjectEnd() {
-		printf(" }");
+	template<typename T>
+	inline void serialize(T &serializer, const c8 *member) {
+		static const auto members = splitString<4>("x, y, z, test");
+		Serializer<T>::serializeObject(serializer, members, member, x, y, z, test);
 	}
 
 };
 
 void testSerialsize() {
 
-	std::vector<Test> tests { {}, {} };
-	Serializer<PrintSerializer>::serialize(tests);
+	Test2 tests;
+	f32 value{};
+	Serializer<PrintSerializer>::serialize(tests, value);
 
 	using arr = std::vector<f32>;
 	using pair = std::pair<c8 *, f32>;
