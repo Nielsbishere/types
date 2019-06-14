@@ -13,6 +13,8 @@ namespace otc {
 		HAS_FUNC_NAMED(hasBegin, begin);
 		HAS_FUNC_NAMED(hasEnd, end);
 		HAS_FUNC_NAMED(hasSize, size);
+		HAS_FIELD_NAMED(hasFirst, first);
+		HAS_FIELD_NAMED(hasSecond, second);
 
 		template<typename T>
 		static constexpr bool isIterable = hasBegin<T> && hasEnd<T> && hasSize<T>;
@@ -127,7 +129,6 @@ namespace otc {
 	struct Serializer {
 
 		//TODO: C-Style arrays
-		//TODO: std::pair
 		//TODO: std::tuple
 
 		template<bool inObject, typename T>
@@ -193,6 +194,26 @@ namespace otc {
 
 				if constexpr (util::hasSerializeObjectEnd<Serialize, hasSerializeTuple_>)
 					serializer.template serializeObjectEnd<hasSerializeTuple_>();
+
+			}
+
+			//Pairs
+			else if constexpr (util::hasFirst<T> && util::hasSecond<T>) {
+
+				if constexpr (util::hasSerializeObject<Serialize, inObject, true>)
+					serializer.template serializeObject<inObject, true>(member);
+
+				if constexpr (util::hasSerializer<Serialize, inObject, decltype(t.first)>)
+					serializer.template serialize<inObject>(member, t.first);
+
+				if constexpr (util::hasSerializeEnd<Serialize>)
+					serializer.serializeEnd();
+
+				if constexpr (util::hasSerializer<Serialize, inObject, decltype(t.second)>)
+					serializer.template serialize<inObject>(member, t.second);
+
+				if constexpr (util::hasSerializeObjectEnd<Serialize, true>)
+					serializer.template serializeObjectEnd<true>();
 
 			}
 
