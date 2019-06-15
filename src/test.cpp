@@ -70,9 +70,8 @@ struct PrintSerializer {
 struct Vector2 {
 
 	f32 x, y;
-	//f32 zw[2];
 
-	Vector2(f32 x = 4, f32 y = 5): x(x), y(y)/*, zw { 7, 9.333 } */ {}
+	Vector2(f32 x = 4, f32 y = 5): x(x), y(y) {}
 
 	otc_serialize_tuple(0, x, y);
 };
@@ -92,8 +91,9 @@ struct Test2 {
 	std::vector<Test> z { {}, {} };
 	Vector2 test;
 	std::string myString = "haha";
+	const c8 myChars[19] = "Checkmate atheists";
 
-	otc_serialize(0, x, y, z, test, myString);
+	otc_serialize(0, x, y, z, test, myString, myChars);
 };
 
 void testSerialsize() {

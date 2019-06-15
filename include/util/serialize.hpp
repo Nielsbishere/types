@@ -128,7 +128,6 @@ namespace otc {
 	template<typename Serialize>
 	struct Serializer {
 
-		//TODO: C-Style arrays
 		//TODO: std::tuple
 
 		template<bool inObject, typename T>
@@ -219,6 +218,41 @@ namespace otc {
 
 			else
 				static_assert(false, "The object can't be serialized; it should be a container, data type or have serialization functions!");
+		}
+
+		template<bool inObject, typename T, usz N>
+		static inline void serialize(Serialize &serializer, const c8 *member, T (&t)[N]) {
+
+			if constexpr (std::is_same_v<T, const c8> || std::is_same_v<T, c8>) {
+
+				if constexpr (util::hasSerializer<Serialize, inObject, const c8 *>) {
+					const c8 *str = t;
+					serializer.template serialize<inObject>(member, str);
+				}
+
+				return;
+			} else {
+
+				if constexpr (util::hasSerializeObject<Serialize, inObject, true>)
+					serializer.template serializeObject<inObject, true>(member);
+
+				member;
+
+				for (T *i = t, *end = i + N, *last = end - 1; i < end; ++i) {
+
+					serialize<false>(serializer, nullptr, *i);
+
+					if constexpr (util::hasSerializeEnd<Serialize>) {
+						if (i != last)
+							serializer.serializeEnd();
+					}
+
+				}
+
+				if constexpr (util::hasSerializeObjectEnd<Serialize, true>)
+					serializer.template serializeObjectEnd<true>();
+
+			}
 		}
 
 		template<bool inObject, typename T, typename ...args>
