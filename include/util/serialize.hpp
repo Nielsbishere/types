@@ -73,17 +73,18 @@ namespace otc {
 
 			namespace templates {
 			
-				template<typename T, bool b, typename T2, typename = int>
+				template<typename T, bool b, usz count, typename T2, typename = int>
 				struct HasSerializer : std::false_type {};
 			
-				template<typename T, bool b, typename T2>
-				struct HasSerializer<T, b, T2, decltype(std::declval<T>().template serialize<b, T>(std::declval<const c8*>(), std::declval<T&>()), 0)>
-					: std::true_type {};
+				template<typename T, bool b, usz count, typename T2>
+				struct HasSerializer<T, b, count, T2, 
+					decltype(std::declval<T>().template serialize<b, count, T>(std::declval<const c8*>(), std::declval<T&>()), 0)
+				> : std::true_type {};
 			
 			}
 
-			template<typename T, bool b, typename T2>
-			static constexpr bool hasSerializer = templates::HasSerializer<T, b, T2, int>::value;
+			template<typename T, bool b, usz count, typename T2>
+			static constexpr bool hasSerializer = templates::HasSerializer<T, b, count, T2, int>::value;
 
 		///Helper for serializable objects
 
@@ -126,16 +127,14 @@ namespace otc {
 	}
 
 	template<typename Serialize>
-	struct Serializer {
-
-		//TODO: std::tuple
+	struct TSerializer {
 
 		template<bool inObject, typename T>
 		static inline void serialize(Serialize &serializer, const c8 *member, T &t) {
 
-			static constexpr bool
-				hasSerialize_ = util::hasSerialize<T, Serialize, Serialize &, const c8 *>,
-				hasSerializeTuple_ = util::hasSerializeTuple<T, Serialize, Serialize &, const c8 *>;
+			constexpr bool
+				hasSerialize_ = util::hasSerialize<T, Serialize, Serialize&, const c8*>,
+				hasSerializeTuple_ = util::hasSerializeTuple<T, Serialize, Serialize&, const c8*>;
 
 			member;
 
@@ -145,8 +144,8 @@ namespace otc {
 				using Iterated = decltype(*t.begin());
 
 				if constexpr (std::is_same_v<Iterated, c8&> || std::is_same_v<Iterated, const c8&>) {
-					if constexpr(util::hasSerializer<Serialize, inObject, T>)
-						serializer.template serialize<inObject>(member, t);
+					if constexpr(util::hasSerializer<Serialize, inObject, 0, T>)
+						serializer.template serialize<inObject, 0>(member, t);
 				}
 
 				else {
@@ -176,8 +175,8 @@ namespace otc {
 
 			//Variables
 			else if constexpr (std::is_arithmetic_v<T>) {
-				if constexpr (util::hasSerializer<Serialize, inObject, T>)
-					serializer.template serialize<inObject>(member, t);
+				if constexpr (util::hasSerializer<Serialize, inObject, 0, T>)
+					serializer.template serialize<inObject, 0>(member, t);
 			}
 
 			//Objects
@@ -202,20 +201,27 @@ namespace otc {
 				if constexpr (util::hasSerializeObject<Serialize, inObject, true>)
 					serializer.template serializeObject<inObject, true>(member);
 
-				if constexpr (util::hasSerializer<Serialize, inObject, decltype(t.first)>)
-					serializer.template serialize<inObject>(member, t.first);
+				serialize<false>(serializer, nullptr, t.first);
 
 				if constexpr (util::hasSerializeEnd<Serialize>)
 					serializer.serializeEnd();
 
-				if constexpr (util::hasSerializer<Serialize, inObject, decltype(t.second)>)
-					serializer.template serialize<inObject>(member, t.second);
+				serialize<false>(serializer, nullptr, t.second);
 
 				if constexpr (util::hasSerializeObjectEnd<Serialize, true>)
 					serializer.template serializeObjectEnd<true>();
 
 			}
 
+			//String
+			else if constexpr (std::is_same_v<T, const c8*> || std::is_same_v<T, c8*> || std::is_same_v<T, const c8* const> || std::is_same_v<T, c8* const>) {
+				if constexpr (util::hasSerializer<Serialize, inObject, 0, T>) {
+					c8 *v = (c8*)t;
+					serializer.template serialize<inObject, 0>(member, v);
+				}
+			}
+
+			//Undefined
 			else
 				static_assert(false, "The object can't be serialized; it should be a container, data type or have serialization functions!");
 		}
@@ -224,13 +230,10 @@ namespace otc {
 		static inline void serialize(Serialize &serializer, const c8 *member, T (&t)[N]) {
 
 			if constexpr (std::is_same_v<T, const c8> || std::is_same_v<T, c8>) {
-
-				if constexpr (util::hasSerializer<Serialize, inObject, const c8 *>) {
-					const c8 *str = t;
-					serializer.template serialize<inObject>(member, str);
+				if constexpr (util::hasSerializer<Serialize, inObject, N, const c8*>) {
+					c8 *str = t;
+					serializer.template serialize<inObject, N>(member, str);
 				}
-
-				return;
 			} else {
 
 				if constexpr (util::hasSerializeObject<Serialize, inObject, true>)
@@ -287,9 +290,7 @@ namespace otc {
 		}
 
 		template<typename T, typename ...args>
-		static inline Serialize serialize(T &t, args &...arg) {
-
-			Serialize serializer;
+		static inline void serialize(Serialize &serializer, T &t, args &...arg) {
 
 			if constexpr (util::hasSerializeObject<Serialize, false, true>)
 				serializer.template serializeObject<false, true>(nullptr);
@@ -298,8 +299,23 @@ namespace otc {
 
 			if constexpr (util::hasSerializeObjectEnd<Serialize, true>)
 				serializer.template serializeObjectEnd<true>();
+		}
 
-			return serializer;
+	};
+
+	struct Serializer {
+
+		template<typename Serialize, typename T2, typename ...args>
+		static inline Serialize serialize(T2 &t, args &...arg) {
+
+			using Serialsize = typename Serialize::Serialsize;
+
+			Serialsize size;
+			TSerializer<Serialsize>::serialize(size, t, arg...);
+
+			Serialize serial(size);
+			TSerializer<Serialize>::serialize(serial, t, arg...);
+			return serial;
 		}
 
 	};
@@ -310,7 +326,7 @@ namespace otc {
 static constexpr u64 struct_version = version;												\
 template<typename T>																		\
 inline void serializeTuple(T &serializer, const c8 *member) {								\
-	otc::Serializer<T>::serialize<false>(serializer, member, __VA_ARGS__);					\
+	otc::TSerializer<T>::serialize<false>(serializer, member, __VA_ARGS__);					\
 }
 
 #define otc_serialize(version, ...)															\
@@ -318,5 +334,5 @@ static constexpr u64 struct_version = version;												\
 template<typename T>																		\
 inline void serialize(T &serializer, const c8 *member) {									\
 	static const auto members = otc::util::getMemberNames(#__VA_ARGS__, __VA_ARGS__);		\
-	otc::Serializer<T>::serializeObject(serializer, members, member, __VA_ARGS__);			\
+	otc::TSerializer<T>::serializeObject(serializer, members, member, __VA_ARGS__);			\
 }
